@@ -294,6 +294,8 @@ defmodule FLAME.Runner do
         time(runner, "runner connect", fn ->
           case runner.backend.remote_boot(backend_state) do
             {:ok, remote_terminator_pid, new_backend_state} when is_pid(remote_terminator_pid) ->
+              require Logger
+              Logger.warning("Remote booted: #{inspect(new_backend_state)}")
               Process.monitor(remote_terminator_pid)
               new_runner = %Runner{runner | terminator: remote_terminator_pid, status: :booted}
               new_state = %{state | runner: new_runner, backend_state: new_backend_state}
