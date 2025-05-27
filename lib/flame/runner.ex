@@ -320,7 +320,7 @@ defmodule FLAME.Runner do
                   :ok
                 end)
 
-              extra = new_backend_state[:extra]
+              extra = Map.get(new_backend_state, :extra)
               {:reply, {:ok, extra}, new_state}
 
             {:error, reason} ->
