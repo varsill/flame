@@ -954,6 +954,8 @@ defmodule FLAME.Pool do
        when is_pid(pid) and is_reference(ref) do
     %{^ref => task_pid} = state.pending_runners
     Process.demonitor(ref, [:flush])
+    require Logger
+    Logger.warning("Adding runner: #{inspect(ref)} #{inspect(extra)}")
 
     new_state = %Pool{
       state
