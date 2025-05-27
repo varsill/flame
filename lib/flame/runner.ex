@@ -321,8 +321,6 @@ defmodule FLAME.Runner do
                 end)
 
               extra = Map.get(new_backend_state, :extra)
-              require Logger
-              Logger.warning("Extra data: #{inspect(extra)}")
               {:reply, {:ok, extra}, new_state}
 
             {:error, reason} ->
