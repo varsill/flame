@@ -750,7 +750,7 @@ defmodule FLAME.Pool do
     # the :max_concurrency option, so we emulate it here.
     tasks =
       for _ <- 1..num_tasks//1 do
-        Task.Supervisor.async(state.task_sup, fn ->
+        Task.Supervisor.async_nolink(state.task_sup, fn ->
           if on_grow_start, do: on_grow_start.(%{count: new_count, name: name, pid: self()})
 
           if runner_opts,
