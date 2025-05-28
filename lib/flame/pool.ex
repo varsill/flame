@@ -74,7 +74,7 @@ defmodule FLAME.Pool do
             async_boot_timer: nil,
             track_resources: false,
             base_sync_stream: nil,
-            new_runners: []
+            added_runners_extras: []
 
   def child_spec(opts) do
     %{
@@ -690,7 +690,7 @@ defmodule FLAME.Pool do
   end
 
   defp boot_min_runners(%Pool{on_grow_start: on_grow_start, name: name} = state) do
-    state = %{state | new_runners: []}
+    state = %{state | added_runners_extras: []}
     to_be_started = min(state.min, state.min_blocking_threshold)
 
     if on_grow_start, do: on_grow_start.(%{count: to_be_started, name: name, pid: self()})
@@ -710,7 +710,7 @@ defmodule FLAME.Pool do
         |> Enum.reduce(state, fn
           {:ok, {:ok, pid, extra}}, acc ->
             {_runner, new_acc} = put_runner(acc, pid)
-            %{new_acc | new_runners: [extra | new_acc.new_runners]}
+            %{new_acc | added_runners_extras: [extra | new_acc.added_runners_extras]}
 
           {:exit, reason}, _acc ->
             raise "failed to boot runner: #{inspect(reason)}"
@@ -738,7 +738,7 @@ defmodule FLAME.Pool do
   # Starts runners asynchronously as to not block the pool. Note that boot_max_concurrency
   # does not bound the number of concurrent booting runners here.
   defp async_boot_runner(%Pool{on_grow_start: on_grow_start, name: name} = state, opts \\ []) do
-    state = %{state | new_runners: []}
+    state = %{state | added_runners_extras: []}
     runner_opts = Keyword.get(opts, :runner_opts)
 
     # :count should be the _total_ count you want to spawn, not the delta
@@ -933,7 +933,7 @@ defmodule FLAME.Pool do
 
   defp maybe_on_grow_end(%Pool{on_grow_end: on_grow_end} = state, pid, result) do
     new_count = runner_count(state) + pending_count(state)
-    meta = %{count: new_count, name: state.name, pid: pid, added_runners: state.new_runners}
+    meta = %{count: new_count, name: state.name, pid: pid, added_runners_extras: state.added_runners_extras}
 
     case result do
       :ok -> if on_grow_end, do: on_grow_end.(:ok, meta)
@@ -958,7 +958,7 @@ defmodule FLAME.Pool do
     new_state = %Pool{
       state
       | pending_runners: Map.delete(state.pending_runners, ref),
-        new_runners: [extra | state.new_runners]
+        added_runners_extras: [extra | state.added_runners_extras]
     }
 
     {runner, new_state} = put_runner(new_state, pid)
