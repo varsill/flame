@@ -759,6 +759,9 @@ defmodule FLAME.Pool do
         end)
       end
 
+    require Logger
+    Logger.warning("TASKS: #{inspect(tasks)}")
+
     pending_runners = Map.new(tasks, &{&1.ref, &1.pid})
     new_pending = Map.merge(state.pending_runners, pending_runners)
     %Pool{state | pending_runners: new_pending}
