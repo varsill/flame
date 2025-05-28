@@ -178,6 +178,7 @@ defmodule FLAME.Runner do
   def handle_info({:DOWN, ref, :process, pid, reason} = msg, state) do
     %{runner: %Runner{} = runner} = state
     reason = if reason == :noconnection, do: {:shutdown, reason}, else: reason
+
     case runner do
       %Runner{terminator: ^pid} ->
         {:stop, reason, state}

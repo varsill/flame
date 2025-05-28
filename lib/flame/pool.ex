@@ -708,9 +708,9 @@ defmodule FLAME.Pool do
           timeout: state.boot_timeout
         )
         |> Enum.reduce(state, fn
-          {:ok, {:ok, pid, _extra}}, acc ->
+          {:ok, {:ok, pid, extra}}, acc ->
             {_runner, new_acc} = put_runner(acc, pid)
-            new_acc
+            %{new_acc | new_runners: [extra | new_acc.new_runners]}
 
           {:exit, reason}, _acc ->
             raise "failed to boot runner: #{inspect(reason)}"
@@ -758,9 +758,6 @@ defmodule FLAME.Pool do
             else: start_child_runner(state)
         end)
       end
-
-    require Logger
-    Logger.warning("TASKS: #{inspect(tasks)}")
 
     pending_runners = Map.new(tasks, &{&1.ref, &1.pid})
     new_pending = Map.merge(state.pending_runners, pending_runners)
@@ -957,13 +954,11 @@ defmodule FLAME.Pool do
        when is_pid(pid) and is_reference(ref) do
     %{^ref => task_pid} = state.pending_runners
     Process.demonitor(ref, [:flush])
-    require Logger
-    Logger.warning("Adding runner: #{inspect(ref)} #{inspect(extra)}")
 
     new_state = %Pool{
       state
       | pending_runners: Map.delete(state.pending_runners, ref),
-        new_runners: [{ref, extra} | state.new_runners]
+        new_runners: [extra | state.new_runners]
     }
 
     {runner, new_state} = put_runner(new_state, pid)
