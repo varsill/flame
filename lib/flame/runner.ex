@@ -177,6 +177,7 @@ defmodule FLAME.Runner do
   @impl true
   def handle_info({:DOWN, ref, :process, pid, reason} = msg, state) do
     %{runner: %Runner{} = runner} = state
+    reason = if reason == :noconnection, do: {:shutdown, reason}, else: reason
 
     case runner do
       %Runner{terminator: ^pid} ->
@@ -320,7 +321,8 @@ defmodule FLAME.Runner do
                   :ok
                 end)
 
-              {:reply, :ok, new_state}
+              extra = Map.get(new_backend_state, :extra)
+              {:reply, {:ok, extra}, new_state}
 
             {:error, reason} ->
               {:stop, {:shutdown, reason}, state}
@@ -470,6 +472,7 @@ defmodule FLAME.Runner do
 
         if track_resources? do
           {result, pids} = FLAME.track_resources(result, [], node(remote_pid))
+
           send(remote_pid, {parent_ref, pids})
           {:ok, {result, pids}}
         else
