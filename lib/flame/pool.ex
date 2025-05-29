@@ -742,9 +742,6 @@ defmodule FLAME.Pool do
     new_count = Keyword.get_lazy(opts, :count, fn -> desired_count(state) end)
     current_count = runner_count(state) + pending_count(state)
     num_tasks = max(new_count - current_count, 0)
-    
-    require Logger
-    Logger.warning("Async boot runner: #{inspect(num_tasks)}")
     # We need the Task.t() returned by async_nolink, we can't use async_stream which implements
     # the :max_concurrency option, so we emulate it here.
     tasks =
@@ -890,6 +887,7 @@ defmodule FLAME.Pool do
 
   defp handle_down(%Pool{} = state, {:DOWN, ref, :process, pid, reason}) do
     state = maybe_drop_waiting(state, pid)
+    Logger.warning("PID: #{inspect(pid)} has been dropped: #{inspect(reason)}")
 
     %{
       callers: callers,
