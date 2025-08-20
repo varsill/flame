@@ -74,7 +74,8 @@ defmodule FLAME.Pool do
             async_boot_timer: nil,
             track_resources: false,
             base_sync_stream: nil,
-            terminating_idle_runners: MapSet.new()
+            terminating_idle_runners: MapSet.new(),
+            pool_pid: nil
 
   def child_spec(opts) do
     %{
@@ -465,7 +466,8 @@ defmodule FLAME.Pool do
       on_shrink: opts[:on_shrink],
       track_resources: track_resources,
       runner_opts: runner_opts,
-      base_sync_stream: base_sync_stream
+      base_sync_stream: base_sync_stream,
+      pool_pid: self()
     }
 
     {:ok, boot_min_runners(state)}
@@ -551,6 +553,11 @@ defmodule FLAME.Pool do
       runner_count(state) + pending_count(state) - idle_terminating_runners_count(state) >
         desired_count(state)
 
+    log_inspect(runner_count(state), label: :runners)
+    log_inspect(pending_count(state), label: :pending)
+    log_inspect(idle_terminating_runners_count(state), label: :idle_terminating_runners_count)
+    log_inspect(desired_count(state), label: :desired)
+
     state =
       if can_idle_shutdown? do
         %Pool{
@@ -562,6 +569,10 @@ defmodule FLAME.Pool do
       end
 
     {:reply, can_idle_shutdown?, state}
+  end
+
+  defp log_inspect(term, label: label) do
+    Logger.warning("#{inspect(label)}: #{inspect(term)}")
   end
 
   @impl true
@@ -785,7 +796,7 @@ defmodule FLAME.Pool do
   end
 
   defp start_child_runner(%Pool{} = state, runner_opts \\ []) do
-    opts = Keyword.merge(state.runner_opts, runner_opts) |> Keyword.put(:pool_pid, self())
+    opts = Keyword.merge(state.runner_opts, runner_opts) |> Keyword.put(:pool_pid, state.pool_pid)
     name = Module.concat(state.name, "Runner#{map_size(state.runners) + 1}")
 
     spec = %{

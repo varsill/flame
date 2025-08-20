@@ -221,10 +221,14 @@ defmodule FLAME.Terminator do
     {:noreply, new_state}
   end
 
-  def handle_info({:idle_shutdown, timer_ref}, %Terminator{parent: parent} = state) do
+  def handle_info(
+        {:idle_shutdown, timer_ref},
+        %Terminator{parent: parent, pool_pid: pool_pid} = state
+      ) do
     {_current_timer, current_timer_ref} = state.idle_shutdown_timer
 
-    if timer_ref == current_timer_ref && state.idle_shutdown_check.(node(parent.pid)) do
+    if timer_ref == current_timer_ref && state.idle_shutdown_check.() &&
+         GenServer.call(pool_pid, {:can_idle_shutdown, parent.pid}) do
       send_parent(parent, {:remote_shutdown, :idle})
       new_state = system_stop(state, "idle shutdown")
       {:noreply, new_state}
@@ -373,8 +377,7 @@ defmodule FLAME.Terminator do
   end
 
   defp maybe_schedule_shutdown(%{calls: calls, watchers: watchers} = state) do
-    if map_size(calls) == 0 and map_size(watchers) == 0 and
-         GenServer.call(state.pool_pid, {:can_idle_shutdown, state.parent.pid}) do
+    if map_size(calls) == 0 and map_size(watchers) == 0 do
       schedule_idle_shutdown(state)
     else
       state
