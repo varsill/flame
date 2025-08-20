@@ -39,7 +39,8 @@ defmodule FLAME.Terminator do
             connect_attempts: 0,
             idle_shutdown_after: nil,
             idle_shutdown_check: nil,
-            idle_shutdown_timer: nil
+            idle_shutdown_timer: nil,
+            pool_dest: nil
 
   def child_spec(opts) do
     %{
@@ -144,7 +145,8 @@ defmodule FLAME.Terminator do
           calls: %{},
           log: log,
           failsafe_timer: failsafe_timer,
-          idle_shutdown_timer: {nil, nil}
+          idle_shutdown_timer: {nil, nil},
+          pool_dest: {opts[:pool_name], node(parent.pid)}
         }
 
         log(state, "starting with parent #{inspect(parent)}")
@@ -220,7 +222,7 @@ defmodule FLAME.Terminator do
   def handle_info({:idle_shutdown, timer_ref}, %Terminator{parent: parent} = state) do
     {_current_timer, current_timer_ref} = state.idle_shutdown_timer
 
-    if timer_ref == current_timer_ref && state.idle_shutdown_check.() do
+    if timer_ref == current_timer_ref && state.idle_shutdown_check.(node(parent.pid)) do
       send_parent(parent, {:remote_shutdown, :idle})
       new_state = system_stop(state, "idle shutdown")
       {:noreply, new_state}
@@ -368,7 +370,8 @@ defmodule FLAME.Terminator do
   end
 
   defp maybe_schedule_shutdown(%{calls: calls, watchers: watchers} = state) do
-    if map_size(calls) == 0 and map_size(watchers) == 0 do
+    if map_size(calls) == 0 and map_size(watchers) == 0 and
+         GenServer.call(state.pool_dest, {:can_idle_shutdown, state.parent.pid}) do
       schedule_idle_shutdown(state)
     else
       state

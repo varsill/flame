@@ -73,7 +73,8 @@ defmodule FLAME.Pool do
             on_shrink: nil,
             async_boot_timer: nil,
             track_resources: false,
-            base_sync_stream: nil
+            base_sync_stream: nil,
+            terminating_idle_runners: MapSet.new()
 
   def child_spec(opts) do
     %{
@@ -545,6 +546,25 @@ defmodule FLAME.Pool do
   end
 
   @impl true
+  def handle_call({:can_idle_shutdown, runner_pid}, _from, state) do
+    can_idle_shutdown? =
+      runner_count(state) + pending_count(state) - idle_terminating_runners_count(state) >
+        desired_count(state)
+
+    state =
+      if can_idle_shutdown? do
+        %Pool{
+          state
+          | terminating_idle_runners: MapSet.put(state.terminating_idle_runners, runner_pid)
+        }
+      else
+        state
+      end
+
+    {:reply, can_idle_shutdown?, state}
+  end
+
+  @impl true
   def handle_call({:poll_unmet_demand, :scale}, _from, state) do
     state = async_boot_runner(state)
     {:reply, :ok, state}
@@ -566,6 +586,10 @@ defmodule FLAME.Pool do
 
   def pending_count(state) do
     map_size(state.pending_runners)
+  end
+
+  defp idle_terminating_runners_count(state) do
+    MapSet.size(state.idle_terminating_runners_count)
   end
 
   def desired_count(state) do
@@ -807,7 +831,8 @@ defmodule FLAME.Pool do
     %Pool{state | runners: new_runners}
   end
 
-  defp drop_child_runner(%Pool{} = state, runner_ref) when is_reference(runner_ref) do
+  defp drop_child_runner(%Pool{} = state, runner_ref, reason, runner_pid)
+       when is_reference(runner_ref) do
     %{^runner_ref => %RunnerState{}} = state.runners
     Process.demonitor(runner_ref, [:flush])
     # kill all callers that still had a checkout for this runner
@@ -821,6 +846,18 @@ defmodule FLAME.Pool do
         {_caller_pid, %Caller{}}, acc ->
           acc
       end)
+
+    new_state =
+      case reason do
+        {:shutdown, :idle} ->
+          %Pool{
+            new_state
+            | terminating_idle_runners: MapSet.delete(state.terminating_idle_runners, runner_pid)
+          }
+
+        _other ->
+          new_state
+      end
 
     maybe_on_shrink(%Pool{new_state | runners: Map.delete(new_state.runners, runner_ref)})
   end
@@ -907,8 +944,11 @@ defmodule FLAME.Pool do
 
     state =
       case runners do
-        %{^ref => _} -> drop_child_runner(state, ref)
-        %{} -> state
+        %{^ref => _} ->
+          drop_child_runner(state, ref, reason, pid)
+
+        %{} ->
+          state
       end
 
     case pending_runners do

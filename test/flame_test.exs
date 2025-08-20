@@ -240,6 +240,7 @@ defmodule FLAME.FLAMETest do
          strategy: {Pool.PerRunnerMaxConcurrencyStrategy, max_concurrency: 2},
          idle_shutdown_after: 500
        ]
+  @tag :sometag
   test "idle shutdown", %{runner_sup: runner_sup} = config do
     sim_long_running(config.test, 100)
     sim_long_running(config.test, 100)
