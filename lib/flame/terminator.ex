@@ -78,8 +78,11 @@ defmodule FLAME.Terminator do
     GenServer.call(terminator, {:deadline, timeout})
   end
 
-  def schedule_idle_shutdown(terminator, idle_shutdown, idle_check, single_use?) do
-    GenServer.call(terminator, {:schedule_idle_shutdown, idle_shutdown, idle_check, single_use?})
+  def schedule_idle_shutdown(terminator, idle_shutdown, idle_check, single_use?, pool_name) do
+    GenServer.call(
+      terminator,
+      {:schedule_idle_shutdown, idle_shutdown, idle_check, single_use?, pool_name}
+    )
   end
 
   def system_shutdown(terminator) when is_pid(terminator) do
@@ -145,8 +148,7 @@ defmodule FLAME.Terminator do
           calls: %{},
           log: log,
           failsafe_timer: failsafe_timer,
-          idle_shutdown_timer: {nil, nil},
-          pool_dest: {opts[:pool_name], node(parent.pid)}
+          idle_shutdown_timer: {nil, nil}
         }
 
         log(state, "starting with parent #{inspect(parent)}")
@@ -267,7 +269,7 @@ defmodule FLAME.Terminator do
   end
 
   def handle_call(
-        {:schedule_idle_shutdown, idle_after, idle_check, single_use?},
+        {:schedule_idle_shutdown, idle_after, idle_check, single_use?, pool_name},
         _from,
         %Terminator{} = state
       ) do
@@ -275,7 +277,8 @@ defmodule FLAME.Terminator do
       state
       | single_use: single_use?,
         idle_shutdown_after: idle_after,
-        idle_shutdown_check: idle_check
+        idle_shutdown_check: idle_check,
+        pool_dest: {pool_name, node(state.parent.pid)}
     }
 
     {:reply, :ok, schedule_idle_shutdown(new_state)}

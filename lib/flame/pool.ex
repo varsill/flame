@@ -589,7 +589,7 @@ defmodule FLAME.Pool do
   end
 
   defp idle_terminating_runners_count(state) do
-    MapSet.size(state.idle_terminating_runners_count)
+    MapSet.size(state.terminating_idle_runners)
   end
 
   def desired_count(state) do
@@ -785,7 +785,7 @@ defmodule FLAME.Pool do
   end
 
   defp start_child_runner(%Pool{} = state, runner_opts \\ []) do
-    opts = Keyword.merge(state.runner_opts, runner_opts)
+    opts = Keyword.merge(state.runner_opts, runner_opts) |> Keyword.put(:pool_name, state.name)
     name = Module.concat(state.name, "Runner#{map_size(state.runners) + 1}")
 
     spec = %{

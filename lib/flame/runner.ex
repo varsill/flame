@@ -38,7 +38,8 @@ defmodule FLAME.Runner do
              :log,
              :boot_timeout,
              :idle_shutdown_after,
-             :idle_shutdown_check
+             :idle_shutdown_check,
+             :pool_name
            ]}
 
   defstruct id: nil,
@@ -57,7 +58,8 @@ defmodule FLAME.Runner do
             idle_shutdown_after: nil,
             idle_shutdown_check: nil,
             code_sync_opts: false,
-            code_sync: nil
+            code_sync: nil,
+            pool_name: nil
 
   @doc """
   Starts a runner.
@@ -320,7 +322,13 @@ defmodule FLAME.Runner do
                   if beams_stream, do: CodeSync.extract_packaged_stream(beams_stream)
 
                   :ok =
-                    Terminator.schedule_idle_shutdown(term, idle_after, idle_check, single_use)
+                    Terminator.schedule_idle_shutdown(
+                      term,
+                      idle_after,
+                      idle_check,
+                      single_use,
+                      runner.pool_name
+                    )
 
                   :ok
                 end)
@@ -349,7 +357,8 @@ defmodule FLAME.Runner do
         :boot_timeout,
         :shutdown_timeout,
         :idle_shutdown_after,
-        :code_sync
+        :code_sync,
+        :pool_name
       ])
 
     Keyword.validate!(opts[:code_sync] || [], [
@@ -386,7 +395,8 @@ defmodule FLAME.Runner do
         idle_shutdown_after: idle_shutdown_after_ms,
         idle_shutdown_check: idle_check,
         terminator: nil,
-        code_sync_opts: Keyword.get(opts, :code_sync, false)
+        code_sync_opts: Keyword.get(opts, :code_sync, false),
+        pool_name: opts[:pool_name]
       }
 
     base_backend_opts = Keyword.take(opts, [:boot_timeout])
