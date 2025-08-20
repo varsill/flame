@@ -785,7 +785,7 @@ defmodule FLAME.Pool do
   end
 
   defp start_child_runner(%Pool{} = state, runner_opts \\ []) do
-    opts = Keyword.merge(state.runner_opts, runner_opts) |> Keyword.put(:pool_name, state.name)
+    opts = Keyword.merge(state.runner_opts, runner_opts) |> Keyword.put(:pool_pid, self())
     name = Module.concat(state.name, "Runner#{map_size(state.runners) + 1}")
 
     spec = %{

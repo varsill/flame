@@ -39,7 +39,7 @@ defmodule FLAME.Runner do
              :boot_timeout,
              :idle_shutdown_after,
              :idle_shutdown_check,
-             :pool_name
+             :pool_pid
            ]}
 
   defstruct id: nil,
@@ -59,7 +59,7 @@ defmodule FLAME.Runner do
             idle_shutdown_check: nil,
             code_sync_opts: false,
             code_sync: nil,
-            pool_name: nil
+            pool_pid: nil
 
   @doc """
   Starts a runner.
@@ -327,7 +327,7 @@ defmodule FLAME.Runner do
                       idle_after,
                       idle_check,
                       single_use,
-                      runner.pool_name
+                      runner.pool_pid
                     )
 
                   :ok
@@ -358,7 +358,7 @@ defmodule FLAME.Runner do
         :shutdown_timeout,
         :idle_shutdown_after,
         :code_sync,
-        :pool_name
+        :pool_pid
       ])
 
     Keyword.validate!(opts[:code_sync] || [], [
@@ -396,7 +396,7 @@ defmodule FLAME.Runner do
         idle_shutdown_check: idle_check,
         terminator: nil,
         code_sync_opts: Keyword.get(opts, :code_sync, false),
-        pool_name: opts[:pool_name]
+        pool_pid: opts[:pool_pid]
       }
 
     base_backend_opts = Keyword.take(opts, [:boot_timeout])
