@@ -103,7 +103,7 @@ defmodule FLAME.RunnerTest do
         backend: {MockBackend, image: "my-imag", app_name: "test", api_token: "secret"}
       )
 
-    assert Runner.remote_boot(runner, nil) == :ok
+    assert Runner.remote_boot(runner, nil) == {:ok, nil}
     assert Runner.call(runner, self(), fn -> :works end) == {:works, []}
     assert_receive :stopped
   end
@@ -111,7 +111,7 @@ defmodule FLAME.RunnerTest do
   test "backend success multi use" do
     {:ok, runner} = mock_successful_runner(4)
 
-    assert Runner.remote_boot(runner, nil) == :ok
+    assert Runner.remote_boot(runner, nil) == {:ok, nil}
     assert Runner.remote_boot(runner, nil) == {:error, :already_booted}
     assert Runner.call(runner, self(), fn -> :works end) == {:works, []}
     refute_receive :stopped
@@ -153,7 +153,7 @@ defmodule FLAME.RunnerTest do
   describe "execution failure" do
     test "single use" do
       {:ok, runner} = mock_successful_runner(3, single_use: true)
-      assert Runner.remote_boot(runner, nil) == :ok
+      assert Runner.remote_boot(runner, nil) == {:ok, nil}
       error = wrap_exit(runner, fn -> Runner.call(runner, self(), fn -> raise "boom" end) end)
       assert {:exit, {%RuntimeError{message: "boom"}, _}} = error
       assert_receive :stopped
@@ -163,7 +163,7 @@ defmodule FLAME.RunnerTest do
     test "multi use" do
       {:ok, runner} = mock_successful_runner(4)
       Process.monitor(runner)
-      assert Runner.remote_boot(runner, nil) == :ok
+      assert Runner.remote_boot(runner, nil) == {:ok, nil}
 
       error = wrap_exit(runner, fn -> Runner.call(runner, self(), fn -> raise "boom" end) end)
       assert {:exit, {%RuntimeError{message: "boom"}, _}} = error
@@ -180,7 +180,7 @@ defmodule FLAME.RunnerTest do
       {:ok, runner} = mock_successful_runner(3, timeout: timeout, single_use: true)
 
       Process.monitor(runner)
-      assert Runner.remote_boot(runner, nil) == :ok
+      assert Runner.remote_boot(runner, nil) == {:ok, nil}
 
       error =
         wrap_exit(runner, fn ->
@@ -199,7 +199,7 @@ defmodule FLAME.RunnerTest do
       {:ok, runner} = mock_successful_runner(4, timeout: timeout)
 
       Process.monitor(runner)
-      assert Runner.remote_boot(runner, nil) == :ok
+      assert Runner.remote_boot(runner, nil) == {:ok, nil}
 
       error =
         wrap_exit(runner, fn ->
@@ -222,7 +222,7 @@ defmodule FLAME.RunnerTest do
 
       Process.unlink(runner)
       Process.monitor(runner)
-      assert Runner.remote_boot(runner, nil) == :ok
+      assert Runner.remote_boot(runner, nil) == {:ok, nil}
 
       assert_receive :stopped, timeout * 2
       assert_receive {:DOWN, _ref, :process, ^runner, _}
@@ -230,7 +230,7 @@ defmodule FLAME.RunnerTest do
       {:ok, runner} = mock_successful_runner(2, idle_shutdown_after: timeout)
       Process.unlink(runner)
       Process.monitor(runner)
-      assert Runner.remote_boot(runner, nil) == :ok
+      assert Runner.remote_boot(runner, nil) == {:ok, nil}
       assert Runner.call(runner, self(), fn -> :works end) == {:works, []}
       assert_receive :stopped, timeout * 2
       assert_receive {:DOWN, _ref, :process, ^runner, _}
@@ -244,7 +244,7 @@ defmodule FLAME.RunnerTest do
 
       Process.unlink(runner)
       Process.monitor(runner)
-      assert Runner.remote_boot(runner, nil) == :ok
+      assert Runner.remote_boot(runner, nil) == {:ok, nil}
 
       refute_receive {:DOWN, _ref, :process, ^runner, _}, timeout * 2
       Agent.update(agent, fn _ -> true end)
@@ -263,7 +263,7 @@ defmodule FLAME.RunnerTest do
       {:ok, runner} = mock_successful_runner(4, code_sync: mock.opts)
 
       Process.monitor(runner)
-      assert Runner.remote_boot(runner, stream) == :ok
+      assert Runner.remote_boot(runner, stream) == {:ok, nil}
       assert Runner.call(runner, self(), fn -> :works end, timeout: 1234) == {:works, []}
       assert Runner.shutdown(runner) == :ok
       # called on remote boot
@@ -277,7 +277,7 @@ defmodule FLAME.RunnerTest do
       {:ok, runner} = mock_successful_runner(3)
 
       Process.monitor(runner)
-      assert Runner.remote_boot(runner, nil) == :ok
+      assert Runner.remote_boot(runner, nil) == {:ok, nil}
       assert Runner.call(runner, self(), fn -> :works end, timeout: 1234) == {:works, []}
       assert Runner.shutdown(runner) == :ok
       refute_receive {CodeSyncMock, _}

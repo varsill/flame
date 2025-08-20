@@ -75,7 +75,8 @@ defmodule FLAME.Pool do
             track_resources: false,
             base_sync_stream: nil,
             terminating_idle_runners: MapSet.new(),
-            pool_pid: nil
+            pool_pid: nil,
+            added_runners_extras: []
 
   def child_spec(opts) do
     %{
@@ -510,8 +511,8 @@ defmodule FLAME.Pool do
     {:noreply, handle_down(state, msg)}
   end
 
-  def handle_info({ref, {:ok, pid}}, %Pool{} = state) when is_reference(ref) do
-    {:noreply, handle_runner_async_up(state, pid, ref)}
+  def handle_info({ref, {:ok, pid, extra}}, %Pool{} = state) when is_reference(ref) do
+    {:noreply, handle_runner_async_up(state, pid, ref, extra)}
   end
 
   def handle_info(:async_boot_continue, %Pool{} = state) do
@@ -724,6 +725,7 @@ defmodule FLAME.Pool do
   end
 
   defp boot_min_runners(%Pool{on_grow_start: on_grow_start, name: name} = state) do
+    state = %{state | added_runners_extras: []}
     to_be_started = min(state.min, state.min_blocking_threshold)
 
     if on_grow_start, do: on_grow_start.(%{count: to_be_started, name: name, pid: self()})
@@ -741,9 +743,9 @@ defmodule FLAME.Pool do
           timeout: state.boot_timeout
         )
         |> Enum.reduce(state, fn
-          {:ok, {:ok, pid}}, acc ->
+          {:ok, {:ok, pid, extra}}, acc ->
             {_runner, new_acc} = put_runner(acc, pid)
-            new_acc
+            %{new_acc | added_runners_extras: [extra | new_acc.added_runners_extras]}
 
           {:exit, reason}, _acc ->
             raise "failed to boot runner: #{inspect(reason)}"
@@ -771,6 +773,7 @@ defmodule FLAME.Pool do
   # Starts runners asynchronously as to not block the pool. Note that boot_max_concurrency
   # does not bound the number of concurrent booting runners here.
   defp async_boot_runner(%Pool{on_grow_start: on_grow_start, name: name} = state, opts \\ []) do
+    state = %{state | added_runners_extras: []}
     runner_opts = Keyword.get(opts, :runner_opts)
 
     # :count should be the _total_ count you want to spawn, not the delta
@@ -809,7 +812,7 @@ defmodule FLAME.Pool do
 
     try do
       case Runner.remote_boot(pid, state.base_sync_stream) do
-        :ok -> {:ok, pid}
+        {:ok, extra} -> {:ok, pid, extra}
         {:error, reason} -> {:error, reason}
       end
     catch
@@ -981,7 +984,7 @@ defmodule FLAME.Pool do
 
   defp maybe_on_grow_end(%Pool{on_grow_end: on_grow_end} = state, pid, result) do
     new_count = runner_count(state) + pending_count(state)
-    meta = %{count: new_count, name: state.name, pid: pid}
+    meta = %{count: new_count, name: state.name, pid: pid, added_runners_extras: state.added_runners_extras}
 
     case result do
       :ok -> if on_grow_end, do: on_grow_end.(:ok, meta)
@@ -998,11 +1001,17 @@ defmodule FLAME.Pool do
     state
   end
 
-  defp handle_runner_async_up(%Pool{} = state, pid, ref) when is_pid(pid) and is_reference(ref) do
+  defp handle_runner_async_up(%Pool{} = state, pid, ref, extra)
+       when is_pid(pid) and is_reference(ref) do
     %{^ref => task_pid} = state.pending_runners
     Process.demonitor(ref, [:flush])
 
-    new_state = %Pool{state | pending_runners: Map.delete(state.pending_runners, ref)}
+    new_state = %Pool{
+      state
+      | pending_runners: Map.delete(state.pending_runners, ref),
+        added_runners_extras: [extra | state.added_runners_extras]
+    }
+
     {runner, new_state} = put_runner(new_state, pid)
     new_state = maybe_on_grow_end(new_state, task_pid, :ok)
 
