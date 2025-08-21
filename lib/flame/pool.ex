@@ -554,11 +554,6 @@ defmodule FLAME.Pool do
       runner_count(state) + pending_count(state) - idle_terminating_runners_count(state) >
         desired_count(state)
 
-    log_inspect(runner_count(state), label: :runners)
-    log_inspect(pending_count(state), label: :pending)
-    log_inspect(idle_terminating_runners_count(state), label: :idle_terminating_runners_count)
-    log_inspect(desired_count(state), label: :desired)
-
     state =
       if can_idle_shutdown? do
         %Pool{
@@ -570,10 +565,6 @@ defmodule FLAME.Pool do
       end
 
     {:reply, can_idle_shutdown?, state}
-  end
-
-  defp log_inspect(term, label: label) do
-    Logger.warning("#{inspect(label)}: #{inspect(term)}")
   end
 
   @impl true
@@ -984,7 +975,13 @@ defmodule FLAME.Pool do
 
   defp maybe_on_grow_end(%Pool{on_grow_end: on_grow_end} = state, pid, result) do
     new_count = runner_count(state) + pending_count(state)
-    meta = %{count: new_count, name: state.name, pid: pid, added_runners_extras: state.added_runners_extras}
+
+    meta = %{
+      count: new_count,
+      name: state.name,
+      pid: pid,
+      added_runners_extras: state.added_runners_extras
+    }
 
     case result do
       :ok -> if on_grow_end, do: on_grow_end.(:ok, meta)

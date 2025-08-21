@@ -17,7 +17,7 @@ defmodule FLAME.Pool.PerRunnerMaxConcurrencyStrategy do
              map_size(pool.pending_runners) * max_concurrency > Pool.waiting_count(pool) do
           [:wait]
         else
-          [:scale, :wait]
+          [:wait, :scale]
         end
 
       true ->
@@ -60,8 +60,11 @@ defmodule FLAME.Pool.PerRunnerMaxConcurrencyStrategy do
   end
 
   @impl true
-  def desired_count(%Pool{} = pool, _opts) do
-    Pool.runner_count(pool) + Pool.pending_count(pool) + 1
+  def desired_count(%Pool{} = pool, opts) do
+    max_concurrency = Keyword.fetch!(opts, :max_concurrency)
+    how_many_active_sessions = available_runners(pool, opts) |> Enum.reduce(0, &(&1.count + &2))
+    how_many_sessions = Pool.waiting_count(pool) + how_many_active_sessions
+    ceil(how_many_sessions / max_concurrency)
   end
 
   @impl true

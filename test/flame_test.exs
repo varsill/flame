@@ -240,7 +240,6 @@ defmodule FLAME.FLAMETest do
          strategy: {Pool.PerRunnerMaxConcurrencyStrategy, max_concurrency: 2},
          idle_shutdown_after: 500
        ]
-  @tag :sometag
   test "idle shutdown", %{runner_sup: runner_sup} = config do
     sim_long_running(config.test, 100)
     sim_long_running(config.test, 100)
@@ -756,7 +755,7 @@ defmodule FLAME.FLAMETest do
       # check in the trackable 1
       send(trackable1.pid, {trackable1.ref, :stop})
 
-      # no idle down because second trackable still alive
+      # nOWNdle down because second trackable still alive
       refute_receive {:DOWN, _, _, ^runner, _}, 1000
 
       # trackable2 occupies the only available slot, so next call times out
