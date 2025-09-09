@@ -755,7 +755,7 @@ defmodule FLAME.FLAMETest do
       # check in the trackable 1
       send(trackable1.pid, {trackable1.ref, :stop})
 
-      # nOWNdle down because second trackable still alive
+      # no idle down because second trackable still alive
       refute_receive {:DOWN, _, _, ^runner, _}, 1000
 
       # trackable2 occupies the only available slot, so next call times out
