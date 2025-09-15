@@ -38,7 +38,8 @@ defmodule FLAME.Runner do
              :log,
              :boot_timeout,
              :idle_shutdown_after,
-             :idle_shutdown_check
+             :idle_shutdown_check,
+             :pool_pid
            ]}
 
   defstruct id: nil,
@@ -57,7 +58,8 @@ defmodule FLAME.Runner do
             idle_shutdown_after: nil,
             idle_shutdown_check: nil,
             code_sync_opts: false,
-            code_sync: nil
+            code_sync: nil,
+            pool_pid: nil
 
   @doc """
   Starts a runner.
@@ -177,6 +179,11 @@ defmodule FLAME.Runner do
   @impl true
   def handle_info({:DOWN, ref, :process, pid, reason} = msg, state) do
     %{runner: %Runner{} = runner} = state
+    reason = if reason == :noconnection, do: {:shutdown, reason}, else: reason
+
+    # If the monitored process went away with :noconnection, we want to prevent
+    # the GenServer terminate/2 callback from raising an error (since in our setup
+    # it likely indicates the remote worker is draining).
     reason = if reason == :noconnection, do: {:shutdown, reason}, else: reason
 
     case runner do
@@ -316,7 +323,13 @@ defmodule FLAME.Runner do
                   if beams_stream, do: CodeSync.extract_packaged_stream(beams_stream)
 
                   :ok =
-                    Terminator.schedule_idle_shutdown(term, idle_after, idle_check, single_use)
+                    Terminator.schedule_idle_shutdown(
+                      term,
+                      idle_after,
+                      idle_check,
+                      single_use,
+                      runner.pool_pid
+                    )
 
                   :ok
                 end)
@@ -346,7 +359,8 @@ defmodule FLAME.Runner do
         :boot_timeout,
         :shutdown_timeout,
         :idle_shutdown_after,
-        :code_sync
+        :code_sync,
+        :pool_pid
       ])
 
     Keyword.validate!(opts[:code_sync] || [], [
@@ -383,7 +397,8 @@ defmodule FLAME.Runner do
         idle_shutdown_after: idle_shutdown_after_ms,
         idle_shutdown_check: idle_check,
         terminator: nil,
-        code_sync_opts: Keyword.get(opts, :code_sync, false)
+        code_sync_opts: Keyword.get(opts, :code_sync, false),
+        pool_pid: opts[:pool_pid]
       }
 
     base_backend_opts = Keyword.take(opts, [:boot_timeout])

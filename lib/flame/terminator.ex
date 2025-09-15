@@ -39,7 +39,8 @@ defmodule FLAME.Terminator do
             connect_attempts: 0,
             idle_shutdown_after: nil,
             idle_shutdown_check: nil,
-            idle_shutdown_timer: nil
+            idle_shutdown_timer: nil,
+            pool_pid: nil
 
   def child_spec(opts) do
     %{
@@ -77,8 +78,11 @@ defmodule FLAME.Terminator do
     GenServer.call(terminator, {:deadline, timeout})
   end
 
-  def schedule_idle_shutdown(terminator, idle_shutdown, idle_check, single_use?) do
-    GenServer.call(terminator, {:schedule_idle_shutdown, idle_shutdown, idle_check, single_use?})
+  def schedule_idle_shutdown(terminator, idle_shutdown, idle_check, single_use?, pool_pid) do
+    GenServer.call(
+      terminator,
+      {:schedule_idle_shutdown, idle_shutdown, idle_check, single_use?, pool_pid}
+    )
   end
 
   def system_shutdown(terminator) when is_pid(terminator) do
@@ -217,10 +221,14 @@ defmodule FLAME.Terminator do
     {:noreply, new_state}
   end
 
-  def handle_info({:idle_shutdown, timer_ref}, %Terminator{parent: parent} = state) do
+  def handle_info(
+        {:idle_shutdown, timer_ref},
+        %Terminator{parent: parent, pool_pid: pool_pid} = state
+      ) do
     {_current_timer, current_timer_ref} = state.idle_shutdown_timer
 
-    if timer_ref == current_timer_ref && state.idle_shutdown_check.() do
+    if timer_ref == current_timer_ref && state.idle_shutdown_check.() &&
+         GenServer.call(pool_pid, {:can_idle_shutdown, parent.pid}) do
       send_parent(parent, {:remote_shutdown, :idle})
       new_state = system_stop(state, "idle shutdown")
       {:noreply, new_state}
@@ -265,7 +273,7 @@ defmodule FLAME.Terminator do
   end
 
   def handle_call(
-        {:schedule_idle_shutdown, idle_after, idle_check, single_use?},
+        {:schedule_idle_shutdown, idle_after, idle_check, single_use?, pool_pid},
         _from,
         %Terminator{} = state
       ) do
@@ -273,7 +281,8 @@ defmodule FLAME.Terminator do
       state
       | single_use: single_use?,
         idle_shutdown_after: idle_after,
-        idle_shutdown_check: idle_check
+        idle_shutdown_check: idle_check,
+        pool_pid: pool_pid
     }
 
     {:reply, :ok, schedule_idle_shutdown(new_state)}

@@ -74,6 +74,8 @@ defmodule FLAME.Pool do
             async_boot_timer: nil,
             track_resources: false,
             base_sync_stream: nil,
+            terminating_idle_runners: MapSet.new(),
+            pool_pid: nil,
             added_runners_extras: []
 
   def child_spec(opts) do
@@ -465,7 +467,8 @@ defmodule FLAME.Pool do
       on_shrink: opts[:on_shrink],
       track_resources: track_resources,
       runner_opts: runner_opts,
-      base_sync_stream: base_sync_stream
+      base_sync_stream: base_sync_stream,
+      pool_pid: self()
     }
 
     {:ok, boot_min_runners(state)}
@@ -546,6 +549,25 @@ defmodule FLAME.Pool do
   end
 
   @impl true
+  def handle_call({:can_idle_shutdown, runner_pid}, _from, state) do
+    can_idle_shutdown? =
+      runner_count(state) + pending_count(state) - idle_terminating_runners_count(state) >
+        desired_count(state)
+
+    state =
+      if can_idle_shutdown? do
+        %Pool{
+          state
+          | terminating_idle_runners: MapSet.put(state.terminating_idle_runners, runner_pid)
+        }
+      else
+        state
+      end
+
+    {:reply, can_idle_shutdown?, state}
+  end
+
+  @impl true
   def handle_call({:poll_unmet_demand, :scale}, _from, state) do
     state = async_boot_runner(state)
     {:reply, :ok, state}
@@ -567,6 +589,10 @@ defmodule FLAME.Pool do
 
   def pending_count(state) do
     map_size(state.pending_runners)
+  end
+
+  defp idle_terminating_runners_count(state) do
+    MapSet.size(state.terminating_idle_runners)
   end
 
   def desired_count(state) do
@@ -745,7 +771,6 @@ defmodule FLAME.Pool do
     new_count = Keyword.get_lazy(opts, :count, fn -> desired_count(state) end)
     current_count = runner_count(state) + pending_count(state)
     num_tasks = max(new_count - current_count, 0)
-
     # We need the Task.t() returned by async_nolink, we can't use async_stream which implements
     # the :max_concurrency option, so we emulate it here.
     tasks =
@@ -765,7 +790,7 @@ defmodule FLAME.Pool do
   end
 
   defp start_child_runner(%Pool{} = state, runner_opts \\ []) do
-    opts = Keyword.merge(state.runner_opts, runner_opts)
+    opts = Keyword.merge(state.runner_opts, runner_opts) |> Keyword.put(:pool_pid, state.pool_pid)
     name = Module.concat(state.name, "Runner#{map_size(state.runners) + 1}")
 
     spec = %{
@@ -811,7 +836,8 @@ defmodule FLAME.Pool do
     %Pool{state | runners: new_runners}
   end
 
-  defp drop_child_runner(%Pool{} = state, runner_ref) when is_reference(runner_ref) do
+  defp drop_child_runner(%Pool{} = state, runner_ref, reason, runner_pid)
+       when is_reference(runner_ref) do
     %{^runner_ref => %RunnerState{}} = state.runners
     Process.demonitor(runner_ref, [:flush])
     # kill all callers that still had a checkout for this runner
@@ -825,6 +851,18 @@ defmodule FLAME.Pool do
         {_caller_pid, %Caller{}}, acc ->
           acc
       end)
+
+    new_state =
+      case reason do
+        {:shutdown, :idle} ->
+          %Pool{
+            new_state
+            | terminating_idle_runners: MapSet.delete(state.terminating_idle_runners, runner_pid)
+          }
+
+        _other ->
+          new_state
+      end
 
     maybe_on_shrink(%Pool{new_state | runners: Map.delete(new_state.runners, runner_ref)})
   end
@@ -891,6 +929,7 @@ defmodule FLAME.Pool do
 
   defp handle_down(%Pool{} = state, {:DOWN, ref, :process, pid, reason}) do
     state = maybe_drop_waiting(state, pid)
+    Logger.warning("PID: #{inspect(pid)} has been dropped: #{inspect(reason)}")
 
     %{
       callers: callers,
@@ -910,8 +949,11 @@ defmodule FLAME.Pool do
 
     state =
       case runners do
-        %{^ref => _} -> drop_child_runner(state, ref)
-        %{} -> state
+        %{^ref => _} ->
+          drop_child_runner(state, ref, reason, pid)
+
+        %{} ->
+          state
       end
 
     case pending_runners do
@@ -933,7 +975,13 @@ defmodule FLAME.Pool do
 
   defp maybe_on_grow_end(%Pool{on_grow_end: on_grow_end} = state, pid, result) do
     new_count = runner_count(state) + pending_count(state)
-    meta = %{count: new_count, name: state.name, pid: pid, added_runners_extras: state.added_runners_extras}
+
+    meta = %{
+      count: new_count,
+      name: state.name,
+      pid: pid,
+      added_runners_extras: state.added_runners_extras
+    }
 
     case result do
       :ok -> if on_grow_end, do: on_grow_end.(:ok, meta)
